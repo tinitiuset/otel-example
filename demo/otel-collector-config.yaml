@@ -1,0 +1,44 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    timeout: 15s
+    send_batch_size: 1000
+  
+  transform:
+    metric_statements:
+      - context: resource
+        statements:
+          - set(attributes["instance"], resource.attributes["service.instance.id"])
+      - context: datapoint
+        statements:
+          - delete_key(attributes, "job")
+
+exporters:
+  prometheus:
+    endpoint: "0.0.0.0:9090"
+  
+  clickhouse:
+    endpoint: "tcp://clickhouse:9000"
+    database: "otel"
+    username: "default"
+    password: ${CLICKHOUSE_PASSWORD}
+    timeout: 15s
+    sending_queue:
+      queue_size: 100
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [transform, batch]
+      exporters: [prometheus, clickhouse] 

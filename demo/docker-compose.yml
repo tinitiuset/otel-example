@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # Wave Generator
+  wave-generator:
+    image: wave-generator
+    deploy:
+      replicas: 4
+    environment:
+      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
+    networks:
+      - otel-network
+    depends_on:
+      - otel-collector
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "8888:8888"   # Collector metrics
+      - "9090:9090"   # Prometheus exporter
+    networks:
+      - otel-network
+    environment:
+      - CLICKHOUSE_PASSWORD=clickhouse_password
+    depends_on:
+      - clickhouse
+      - prometheus
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9091:9090"  # Changed to avoid conflict with otel-collector
+    networks:
+      - otel-network
+
+  # ClickHouse
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9000:9000"   # Native interface
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=clickhouse_password
+      - CLICKHOUSE_DB=otel
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - otel-network
+
+networks:
+  otel-network:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  clickhouse_data: 
